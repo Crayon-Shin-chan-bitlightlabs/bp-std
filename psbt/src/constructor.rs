@@ -43,6 +43,16 @@ pub enum ConstructionError {
     /// the input spending {0} is not known for the current wallet.
     UnknownInput(Outpoint),
 
+    /// the input spending {0} is known as a wallet outpoint, but the previous transaction can't be loaded.
+    MissingPrevTx(Outpoint),
+
+    /// the previous transaction for input spending {0} is known, but wallet UTXO metadata can't be loaded.
+    MissingWalletUtxo(Outpoint),
+
+    /// the previous transaction for input spending {0} is known, but the wallet descriptor can't derive a
+    /// script matching the prevout metadata.
+    DescriptorScriptMismatch(Outpoint),
+
     /// impossible to construct a transaction having no inputs.
     NoInputs,
 
@@ -239,19 +249,24 @@ pub trait PsbtConstructor {
 
         // 1. Add inputs
         for coin in coins {
-            let prev_tx = self.prev_tx(coin.txid).ok_or(ConstructionError::UnknownInput(coin))?;
-            let (utxo, spk) = self.utxo(coin).ok_or(ConstructionError::UnknownInput(coin))?;
+            let prev_tx = self
+                .prev_tx(coin.txid)
+                .ok_or(ConstructionError::MissingPrevTx(coin))?;
+            let (utxo, spk) = self
+                .utxo(coin)
+                .ok_or(ConstructionError::MissingWalletUtxo(coin))?;
             if psbt.inputs().any(|inp| inp.previous_outpoint == utxo.outpoint) {
                 continue;
             }
-            psbt.append_input_expect(
+            psbt.append_input(
                 prev_tx,
                 utxo.to_prevout(),
                 self.descriptor(),
                 utxo.terminal,
                 spk,
                 params.seq_no,
-            );
+            )
+            .map_err(|_| ConstructionError::DescriptorScriptMismatch(coin))?;
         }
         if psbt.inputs().count() == 0 {
             return Err(ConstructionError::NoInputs);

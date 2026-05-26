@@ -323,10 +323,12 @@ impl Psbt {
             return Err(Unmodifiable);
         }
 
-        let script = descriptor
+        let Some(script) = descriptor
             .derive(terminal.keychain, terminal.index)
             .find(|script| script.to_script_pubkey() == script_pubkey)
-            .expect("unable to generate input matching prevout");
+        else {
+            return Err(Unmodifiable);
+        };
 
         let mut witness_utxo = None;
         let mut non_witness_tx = None;
